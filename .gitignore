@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+.venv
+venv/
+# SSL Certificates (NEVER commit these!)
+certs/
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+./venv/
+# Uploaded files
+uploads/
+*.jpg
+*.jpeg
+*.png
+*.gif
+*.webp
+*.svg
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Environment variables
+.env
+.env.local
+
+# OS
+.DS_Store
+Thumbs.db
