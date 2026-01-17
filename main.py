@@ -24,11 +24,15 @@ origins = [
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
-    allow_credentials=False,
-    allow_methods=["*"],  # Allows all methods (GET, POST, PUT, DELETE, etc.)
-    allow_headers=["*"],  # Allows all headers
+    allow_origins=[
+        "https://localhost:5241",
+        "https://127.0.0.1:5241"
+    ],
+    allow_credentials=False,  # IMPORTANT
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
+
 
 # Create uploads directory if it doesn't exist
 UPLOAD_DIR = Path("uploads")
