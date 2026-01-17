@@ -14,10 +14,10 @@ if (-not (Test-Path $certFile) -or -not (Test-Path $keyFile)) {
 
 Write-Host "=== Starting FastAPI Backend with HTTPS ===" -ForegroundColor Green
 Write-Host "Server will be available at:" -ForegroundColor Cyan
-Write-Host "  - https://localhost:8443" -ForegroundColor Green
 Write-Host "  - https://127.0.0.1:8443" -ForegroundColor Green
+Write-Host "  - https://localhost:8443" -ForegroundColor Green
 Write-Host ""
-Write-Host "⚠️  DO NOT use https://0.0.0.0:8443 (this will cause ERR_ADDRESS_INVALID)" -ForegroundColor Yellow
+Write-Host "Server is bound to 127.0.0.1 (localhost only)" -ForegroundColor Cyan
 Write-Host "Press Ctrl+C to stop the server`n" -ForegroundColor Yellow
 
 # Activate virtual environment if it exists
@@ -26,9 +26,9 @@ if (Test-Path "venv\Scripts\Activate.ps1") {
     & "venv\Scripts\Activate.ps1"
 }
 
-# Run uvicorn with SSL
+# Run uvicorn with SSL - bind to 127.0.0.1
 uvicorn main:app `
-    --host 0.0.0.0 `
+    --host 127.0.0.1 `
     --port 8443 `
     --ssl-keyfile $keyFile `
     --ssl-certfile $certFile `

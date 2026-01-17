@@ -69,5 +69,5 @@ Set-Location ..
 
 Write-Host "`n=== Setup Complete ===" -ForegroundColor Green
 Write-Host "`nYou can now run your backend with HTTPS using:" -ForegroundColor Yellow
-Write-Host "uvicorn main:app --host 0.0.0.0 --port 8443 --ssl-keyfile certs\localhost-key.pem --ssl-certfile certs\localhost.pem" -ForegroundColor Cyan
+Write-Host "uvicorn main:app --host 127.0.0.1 --port 8443 --ssl-keyfile certs\localhost-key.pem --ssl-certfile certs\localhost.pem" -ForegroundColor Cyan
 Write-Host "`nOr use the provided run_https.ps1 script." -ForegroundColor Yellow

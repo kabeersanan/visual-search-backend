@@ -130,3 +130,5 @@ websockets==16.0
 
 zstandard==0.25.0
 
+# Cloudinary for cloud image storage
+cloudinary==1.41.0

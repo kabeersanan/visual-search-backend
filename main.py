@@ -11,6 +11,21 @@ from PIL import Image
 import torch
 import numpy as np
 from scipy.spatial.distance import cosine
+import cloudinary
+import cloudinary.uploader
+import cloudinary.api
+from dotenv import load_dotenv
+
+# Load environment variables
+load_dotenv()
+
+# Configure Cloudinary
+cloudinary.config(
+    cloud_name=os.getenv("CLOUDINARY_CLOUD_NAME", ""),
+    api_key=os.getenv("CLOUDINARY_API_KEY", ""),
+    api_secret=os.getenv("CLOUDINARY_API_SECRET", ""),
+    secure=True
+)
 
 app = FastAPI()
 
@@ -52,6 +67,7 @@ except Exception as e:
     clip_processor = None
 
 # Load pre-computed image embeddings
+# Structure: {filename: {"embedding": [...], "cloudinary_url": "https://..."}}
 EMBEDDINGS_FILE = "image_embeddings.pkl"
 image_embeddings = {}
 
@@ -61,7 +77,25 @@ def load_embeddings():
     if os.path.exists(EMBEDDINGS_FILE):
         try:
             with open(EMBEDDINGS_FILE, 'rb') as f:
-                image_embeddings = pickle.load(f)
+                loaded_data = pickle.load(f)
+                # Handle both old format (just embeddings) and new format (with cloudinary_url)
+                if loaded_data and isinstance(loaded_data, dict):
+                    # Check if it's old format (direct embeddings) or new format (dict with embedding + url)
+                    first_value = next(iter(loaded_data.values())) if loaded_data else None
+                    if isinstance(first_value, dict) and "embedding" in first_value:
+                        image_embeddings = loaded_data  # New format
+                    else:
+                        # Convert old format to new format (migrate)
+                        print("Migrating embeddings to new format with Cloudinary URLs...")
+                        new_embeddings = {}
+                        for filename, embedding in loaded_data.items():
+                            new_embeddings[filename] = {
+                                "embedding": embedding,
+                                "cloudinary_url": None  # Will be updated when images are uploaded
+                            }
+                        image_embeddings = new_embeddings
+                else:
+                    image_embeddings = {}
             print(f"Loaded {len(image_embeddings)} image embeddings from {EMBEDDINGS_FILE}")
         except Exception as e:
             print(f"Error loading embeddings: {e}")
@@ -102,14 +136,34 @@ def find_similar_images(uploaded_image_path: str, top_k: int = 10) -> List[Dict]
         
         # Calculate similarity scores
         similarities = []
-        for filename, embedding in image_embeddings.items():
+        for filename, data in image_embeddings.items():
+            # Handle both old format (direct embedding) and new format (dict)
+            if isinstance(data, dict):
+                embedding_data = data.get("embedding", data)  # Get embedding from dict, fallback to data itself
+                # Convert list back to numpy array if needed (when loaded from pickle)
+                if isinstance(embedding_data, list):
+                    embedding = np.array(embedding_data)
+                else:
+                    embedding = embedding_data
+                cloudinary_url = data.get("cloudinary_url")
+            else:
+                embedding = data
+                cloudinary_url = None
+            
+            # Ensure embedding is numpy array for cosine similarity
+            if not isinstance(embedding, np.ndarray):
+                embedding = np.array(embedding)
+            
             # Using cosine similarity (1 - cosine_distance)
             similarity_score = 1 - cosine(query_embedding, embedding)
-            similarities.append({
+            
+            result = {
                 "filename": filename,
                 "similarity": float(similarity_score),
-                "filepath": str(UPLOAD_DIR / filename) if (UPLOAD_DIR / filename).exists() else None
-            })
+                "cloudinary_url": cloudinary_url
+            }
+            
+            similarities.append(result)
         
         # Sort by similarity (highest first) and return top_k
         sorted_results = sorted(similarities, key=lambda x: x["similarity"], reverse=True)
@@ -291,37 +345,60 @@ async def store_brandkit_image(
             unique_id = str(uuid.uuid4())[:8]
             filename = f"brandkit_{timestamp}_{unique_id}.png"
         
-        # Save to photos folder
-        PHOTOS_DIR = Path("photos")
-        PHOTOS_DIR.mkdir(exist_ok=True)
-        
-        saved_file_path = PHOTOS_DIR / filename
-        with open(saved_file_path, "wb") as f:
+        # Save temporarily to generate embedding
+        temp_file_path = UPLOAD_DIR / filename
+        with open(temp_file_path, "wb") as f:
             f.write(contents)
         
-        # Generate embedding for the new image
+        # Upload to Cloudinary
+        cloudinary_url = None
         try:
-            embedding = generate_image_embedding(str(saved_file_path))
-            # Add to in-memory embeddings
-            image_embeddings[filename] = embedding
+            upload_result = cloudinary.uploader.upload(
+                temp_file_path,
+                folder="brandkit",  # Organize images in Cloudinary folder
+                public_id=filename.replace(Path(filename).suffix, ""),  # Remove extension for public_id
+                resource_type="image"
+            )
+            cloudinary_url = upload_result.get("secure_url") or upload_result.get("url")
+            print(f"Uploaded {filename} to Cloudinary: {cloudinary_url}")
+        except Exception as cloudinary_error:
+            print(f"Warning: Failed to upload to Cloudinary: {cloudinary_error}")
+            # Continue without Cloudinary URL - can be uploaded later
+        
+        # Generate embedding for the new image
+        embedding_generated = False
+        try:
+            embedding = generate_image_embedding(str(temp_file_path))
+            # Add to in-memory embeddings with Cloudinary URL
+            # Store embedding as numpy array (pickle can handle numpy arrays)
+            image_embeddings[filename] = {
+                "embedding": embedding,  # Keep as numpy array for calculations
+                "cloudinary_url": cloudinary_url
+            }
             # Save updated embeddings to pickle file
             with open(EMBEDDINGS_FILE, 'wb') as f:
                 pickle.dump(image_embeddings, f)
+            embedding_generated = True
             print(f"Generated embedding for {filename} and updated {EMBEDDINGS_FILE}")
         except Exception as embed_error:
             print(f"Warning: Failed to generate embedding for {filename}: {embed_error}")
-            # Still return success - image is saved even if embedding fails
-            # The embedding can be regenerated later by rebuilding the database
+            # Still return success - image is uploaded to Cloudinary even if embedding fails
+        
+        # Clean up temporary file
+        if temp_file_path.exists():
+            try:
+                temp_file_path.unlink()
+            except:
+                pass
         
         # Parse additional metadata if provided
         image_metadata = {
             "filename": filename,
             "original_filename": file.filename or filename,
-            "filepath": str(saved_file_path),
             "content_type": file_type,
             "size": len(contents),
             "uploaded_at": datetime.now().isoformat(),
-            "embedding_generated": filename in image_embeddings
+            "embedding_generated": embedding_generated
         }
         
         if metadata:
@@ -335,8 +412,8 @@ async def store_brandkit_image(
         return {
             "message": "Brandkit image stored successfully",
             "filename": filename,
-            "saved_path": str(saved_file_path),
-            "embedding_generated": filename in image_embeddings,
+            "cloudinary_url": cloudinary_url,
+            "embedding_generated": embedding_generated,
             "total_images_in_database": len(image_embeddings),
             "metadata": image_metadata
         }

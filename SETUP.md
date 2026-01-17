@@ -28,7 +28,7 @@ The first time you run the server, it will automatically download the CLIP model
 .\run_https.ps1
 
 # Or manually:
-uvicorn main:app --host 0.0.0.0 --port 8443 --ssl-keyfile certs\localhost-key.pem --ssl-certfile certs\localhost.pem --reload
+uvicorn main:app --host 127.0.0.1 --port 8443 --ssl-keyfile certs\localhost-key.pem --ssl-certfile certs\localhost.pem --reload
 ```
 
 ## 4. Test the API
@@ -84,7 +84,7 @@ python -c "from sentence_transformers import SentenceTransformer; SentenceTransf
 ### Port Already in Use
 Change the port in `run_https.ps1` or use:
 ```bash
-uvicorn main:app --host 0.0.0.0 --port 8444 --ssl-keyfile certs\localhost-key.pem --ssl-certfile certs\localhost.pem
+uvicorn main:app --host 127.0.0.1 --port 8444 --ssl-keyfile certs\localhost-key.pem --ssl-certfile certs\localhost.pem
 ```
 
 ### CUDA/GPU Issues

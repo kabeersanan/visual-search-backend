@@ -5,10 +5,10 @@
 Run your backend with HTTPS using this command:
 
 ```powershell
-uvicorn main:app --host 0.0.0.0 --port 8443 --ssl-keyfile certs\localhost-key.pem --ssl-certfile certs\localhost.pem --reload
+uvicorn main:app --host 127.0.0.1 --port 8443 --ssl-keyfile certs\localhost-key.pem --ssl-certfile certs\localhost.pem --reload
 ```
 
-**Note:** `--host 0.0.0.0` means the server listens on all network interfaces. To access it, use `localhost` or `127.0.0.1` in your browser/API calls, NOT `0.0.0.0`.
+**Note:** `--host 127.0.0.1` means the server listens on localhost only. Access it using `https://127.0.0.1:8443` or `https://localhost:8443`.
 
 ### Or use the provided script:
 ```powershell

@@ -60,12 +60,12 @@ This will create:
 
 ### Method 2: Manual uvicorn command
 ```powershell
-uvicorn main:app --host 0.0.0.0 --port 8443 --ssl-keyfile certs/localhost-key.pem --ssl-certfile certs/localhost.pem --reload
+uvicorn main:app --host 127.0.0.1 --port 8443 --ssl-keyfile certs/localhost-key.pem --ssl-certfile certs/localhost.pem --reload
 ```
 
 ### Method 3: Using uvicorn with Python
 ```powershell
-python -m uvicorn main:app --host 0.0.0.0 --port 8443 --ssl-keyfile certs/localhost-key.pem --ssl-certfile certs/localhost.pem --reload
+python -m uvicorn main:app --host 127.0.0.1 --port 8443 --ssl-keyfile certs/localhost-key.pem --ssl-certfile certs/localhost.pem --reload
 ```
 
 ## Access Your Backend
@@ -96,7 +96,7 @@ const API_URL = 'https://localhost:8443/search';
 ### Port Already in Use
 If port 8443 is in use, change it:
 ```powershell
-uvicorn main:app --host 0.0.0.0 --port 8444 --ssl-keyfile certs/localhost-key.pem --ssl-certfile certs/localhost.pem
+uvicorn main:app --host 127.0.0.1 --port 8444 --ssl-keyfile certs/localhost-key.pem --ssl-certfile certs/localhost.pem
 ```
 
 ### Permission Denied
