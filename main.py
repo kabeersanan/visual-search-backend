@@ -18,7 +18,7 @@ app = FastAPI()
 # Allow requests from Adobe Express Add-on frontend and local development
 origins = [
     "https://localhost:5241",  # Adobe Express Add-on frontend
-    "https://127.0.0.1:5241",  # Alternative frontend address
+    "https://127.0.0.1:5241","*"  # Alternative frontend address
     # Add more origins as needed
 ]
 
