@@ -159,19 +159,181 @@ async def search(
         # Find similar images using vector search
         similar_images = find_similar_images(str(saved_file_path), top_k=top_k)
         
-        return {
+        # Prepare response
+        response = {
             "message": "Search completed successfully",
             "query": query or "",
             "query_image": {
                 "original_filename": file.filename,
                 "saved_filename": filename,
-                "saved_path": str(saved_file_path),
                 "content_type": file_type,
                 "size": len(contents)
             },
             "similar_images": similar_images,
             "total_results": len(similar_images),
             "uploaded_at": datetime.now().isoformat()
+        }
+        
+        # Delete the uploaded file after processing
+        if saved_file_path and saved_file_path.exists():
+            try:
+                saved_file_path.unlink()
+                print(f"Deleted uploaded file: {saved_file_path}")
+            except Exception as delete_error:
+                print(f"Warning: Could not delete uploaded file {saved_file_path}: {delete_error}")
+        
+        return response
+    except HTTPException:
+        # Clean up file on error
+        if saved_file_path and saved_file_path.exists():
+            try:
+                saved_file_path.unlink()
+            except:
+                pass
+        raise
+    except Exception as e:
+        # Clean up file if processing failed
+        if saved_file_path and saved_file_path.exists():
+            try:
+                saved_file_path.unlink()
+            except:
+                pass
+        raise HTTPException(status_code=500, detail=f"Failed to process image: {str(e)}")
+
+
+@app.post("/store")
+async def store_brandkit_image(
+    file: UploadFile = File(...),
+    metadata: Optional[str] = Form(None)
+):
+    """
+    Store brandkit image endpoint.
+    Users can upload their personal brand kit images which will be saved to the photos folder.
+    
+    The frontend should send:
+    - 'file': A Blob or File object containing the image to store (via FormData)
+    - 'metadata': Optional JSON string with metadata (e.g., {"category": "logo", "brand": "Nike"})
+    
+    File size limit: 10MB
+    Supported formats: PNG, JPG, JPEG, WEBP
+    
+    Example frontend usage:
+        const formData = new FormData();
+        formData.append('file', fileObject);
+        fetch('/store', { method: 'POST', body: formData });
+    """
+    saved_file_path = None
+    try:
+        # Read the uploaded file
+        contents = await file.read()
+        file_type = file.content_type or ""
+        
+        # File size validation (10MB limit)
+        MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
+        if len(contents) > MAX_FILE_SIZE:
+            raise HTTPException(
+                status_code=413, 
+                detail=f"File too large. Maximum size is 10MB, received {len(contents) / 1024 / 1024:.2f}MB"
+            )
+        
+        # Validate file type
+        allowed_types = ['image/png', 'image/jpeg', 'image/jpg', 'image/webp']
+        if file_type:
+            file_type_lower = file_type.lower()
+            if file_type_lower not in allowed_types:
+                # Try to detect from filename extension as fallback
+                if file.filename:
+                    ext = Path(file.filename).suffix.lower()
+                    if ext not in ['.png', '.jpg', '.jpeg', '.webp']:
+                        raise HTTPException(
+                            status_code=400, 
+                            detail=f"Invalid file type. Allowed: PNG, JPG, JPEG, WEBP. Received: {file_type}"
+                        )
+                else:
+                    raise HTTPException(
+                        status_code=400, 
+                        detail=f"Invalid file type. Allowed: PNG, JPG, JPEG, WEBP. Received: {file_type}"
+                    )
+        elif file.filename:
+            # No content-type but has filename - check extension
+            ext = Path(file.filename).suffix.lower()
+            if ext not in ['.png', '.jpg', '.jpeg', '.webp']:
+                raise HTTPException(
+                    status_code=400, 
+                    detail=f"Invalid file type. Allowed: PNG, JPG, JPEG, WEBP"
+                )
+        else:
+            raise HTTPException(
+                status_code=400, 
+                detail="File must be an image. No content-type or filename provided."
+            )
+        
+        # Generate filename (keep original if provided, or generate one)
+        if file.filename:
+            # Sanitize filename - remove any path components for security
+            original_name = Path(file.filename).name
+            # Keep original extension
+            file_extension = Path(original_name).suffix or ".png"
+            # Create a safe filename (optional: add timestamp for uniqueness)
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            unique_id = str(uuid.uuid4())[:8]
+            # Preserve original name but add timestamp to avoid conflicts
+            base_name = Path(original_name).stem
+            filename = f"{base_name}_{timestamp}_{unique_id}{file_extension}"
+        else:
+            # Default filename if not provided
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            unique_id = str(uuid.uuid4())[:8]
+            filename = f"brandkit_{timestamp}_{unique_id}.png"
+        
+        # Save to photos folder
+        PHOTOS_DIR = Path("photos")
+        PHOTOS_DIR.mkdir(exist_ok=True)
+        
+        saved_file_path = PHOTOS_DIR / filename
+        with open(saved_file_path, "wb") as f:
+            f.write(contents)
+        
+        # Generate embedding for the new image
+        try:
+            embedding = generate_image_embedding(str(saved_file_path))
+            # Add to in-memory embeddings
+            image_embeddings[filename] = embedding
+            # Save updated embeddings to pickle file
+            with open(EMBEDDINGS_FILE, 'wb') as f:
+                pickle.dump(image_embeddings, f)
+            print(f"Generated embedding for {filename} and updated {EMBEDDINGS_FILE}")
+        except Exception as embed_error:
+            print(f"Warning: Failed to generate embedding for {filename}: {embed_error}")
+            # Still return success - image is saved even if embedding fails
+            # The embedding can be regenerated later by rebuilding the database
+        
+        # Parse additional metadata if provided
+        image_metadata = {
+            "filename": filename,
+            "original_filename": file.filename or filename,
+            "filepath": str(saved_file_path),
+            "content_type": file_type,
+            "size": len(contents),
+            "uploaded_at": datetime.now().isoformat(),
+            "embedding_generated": filename in image_embeddings
+        }
+        
+        if metadata:
+            try:
+                import json
+                additional_metadata = json.loads(metadata)
+                image_metadata.update(additional_metadata)
+            except:
+                pass
+        
+        return {
+            "message": "Brandkit image stored successfully",
+            "filename": filename,
+            "saved_path": str(saved_file_path),
+            "embedding_generated": filename in image_embeddings,
+            "total_images_in_database": len(image_embeddings),
+            "metadata": image_metadata
         }
     except HTTPException:
         raise
@@ -182,7 +344,7 @@ async def search(
                 saved_file_path.unlink()
             except:
                 pass
-        raise HTTPException(status_code=500, detail=f"Failed to process image: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Failed to store image: {str(e)}")
 
 
 @app.get("/health")
